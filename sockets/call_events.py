@@ -40,14 +40,16 @@ def register_call_events(socketio):
         print(f'[CALL] target_sid for {target_id}: {target_sid}', flush=True)
 
         if not target_sid:
+            target_info = _get_user_info(target_id)
             print(f'[CALL] target {target_id} is offline, sending call_error', flush=True)
-            emit('call_error', {'error': 'User is offline'})
+            emit('call_error', {'error': f'{target_info["display_name"]} is currently offline and cannot receive calls.'})
             return
 
         # Check if target is already in a call
         if target_id in active_calls:
+            target_info = _get_user_info(target_id)
             print(f'[CALL] target {target_id} is busy', flush=True)
-            emit('call_error', {'error': 'User is busy'})
+            emit('call_error', {'error': f'{target_info["display_name"]} is currently on another call. Try again later.'})
             return
 
         # Track the pending call
