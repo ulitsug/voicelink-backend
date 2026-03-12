@@ -38,6 +38,7 @@ def create_app():
     from routes.chat import chat_bp
     from routes.groups import groups_bp
     from routes.calendar_routes import calendar_bp
+    from routes.admin import admin_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(contacts_bp)
@@ -45,6 +46,7 @@ def create_app():
     app.register_blueprint(chat_bp)
     app.register_blueprint(groups_bp)
     app.register_blueprint(calendar_bp)
+    app.register_blueprint(admin_bp)
 
     # Register SocketIO events
     register_socket_events(socketio)
@@ -56,8 +58,38 @@ def create_app():
     # Create tables if they don't exist
     with app.app_context():
         db.create_all()
+        _seed_super_admin()
 
     return app
+
+
+def _seed_super_admin():
+    """Ensure user id=1 exists as the undeletable super admin."""
+    from models.user import User
+
+    admin = db.session.get(User, 1)
+    if admin:
+        # Ensure existing user 1 is super_admin with correct credentials
+        if admin.role != 'super_admin' or admin.username != 'admin':
+            admin.username = 'admin'
+            admin.email = 'admin@voicelink.local'
+            admin.display_name = 'System Admin'
+            admin.role = 'super_admin'
+            admin.set_password('4321')
+            db.session.commit()
+            print('🔑 Super admin credentials reset (username: admin, password: 4321)')
+    else:
+        admin = User(
+            id=1,
+            username='admin',
+            email='admin@voicelink.local',
+            display_name='System Admin',
+            role='super_admin',
+        )
+        admin.set_password('4321')
+        db.session.add(admin)
+        db.session.commit()
+        print('🔑 Super admin created (username: admin, password: 4321)')
 
 
 app = create_app()

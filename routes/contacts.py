@@ -19,12 +19,20 @@ def get_contacts(user):
 @jwt_required_with_user
 def list_all_users(user):
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 50, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    search = request.args.get('q', '').strip()
 
     # Get IDs of existing contacts
     contact_ids = [c.contact_id for c in Contact.query.filter_by(user_id=user.id).all()]
 
-    pagination = User.query.filter(User.id != user.id).order_by(User.display_name).paginate(
+    query = User.query.filter(User.id != user.id)
+
+    if search:
+        query = query.filter(
+            (User.username.ilike(f'%{search}%')) | (User.display_name.ilike(f'%{search}%'))
+        )
+
+    pagination = query.order_by(User.display_name).paginate(
         page=page, per_page=per_page, error_out=False
     )
 

@@ -15,6 +15,7 @@ class User(db.Model):
     display_name = db.Column(db.String(100), nullable=False)
     bio = db.Column(db.String(250), nullable=True)
     avatar_url = db.Column(db.String(255), nullable=True)
+    role = db.Column(db.String(20), default='user')  # super_admin, admin, user
     status = db.Column(db.String(20), default='offline')  # online, offline, busy, away
     public_key = db.Column(db.Text, nullable=True)  # For E2E encryption
     last_seen = db.Column(db.DateTime, default=datetime.utcnow)
@@ -39,6 +40,14 @@ class User(db.Model):
             self.password_hash.encode('utf-8')
         )
 
+    @property
+    def is_admin(self):
+        return self.role in ('admin', 'super_admin')
+
+    @property
+    def is_super_admin(self):
+        return self.role == 'super_admin'
+
     def to_dict(self, include_email=False):
         data = {
             'id': self.id,
@@ -46,6 +55,7 @@ class User(db.Model):
             'display_name': self.display_name,
             'bio': self.bio,
             'avatar_url': self.avatar_url,
+            'role': self.role or 'user',
             'status': self.status,
             'last_seen': self.last_seen.isoformat() if self.last_seen else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
