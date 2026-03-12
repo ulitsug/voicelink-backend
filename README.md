@@ -210,6 +210,19 @@ bash start_turn.sh
 
 VoiceLink includes a **Laravel-like migration manager** (`migrate.py`) for version-controlled database schema management.
 
+> **⚠️ IMPORTANT: Database Change Policy**
+>
+> **ALL database schema modifications MUST go through the migration system.** Direct manual changes to the database (via SQL clients, raw queries in code, or `db.create_all()`) are **strictly prohibited** in development and production.
+>
+> This includes:
+> - Creating new tables
+> - Adding, renaming, or dropping columns
+> - Modifying column types, defaults, or constraints
+> - Adding or removing indexes and foreign keys
+> - Inserting default/seed data
+>
+> See the [Database Change Policy](#database-change-policy) section for full details.
+
 ### Commands
 
 | Command | Description |
@@ -458,6 +471,117 @@ After running `python migrate.py seed`:
 | Username | `admin` |
 | Password | `4321` |
 | Role | `super_admin` |
+
+---
+
+## Database Change Policy
+
+**All database schema modifications MUST be performed through the migration system (`migrate.py`).** This is a strict project convention — no exceptions.
+
+### Why?
+
+- **Version control** — Every schema change is recorded in a timestamped migration file, providing a complete audit trail of how the database evolved.
+- **Reproducibility** — Any developer (or CI/CD pipeline) can recreate the exact database schema from scratch by running `python migrate.py fresh`.
+- **Rollback safety** — Every migration has a `down()` function, allowing changes to be safely reversed if something goes wrong.
+- **Team collaboration** — Migration files are committed to git. Teammates pull changes and run `python migrate.py migrate` to stay in sync — no manual SQL needed.
+- **Deployment consistency** — Production, staging, and development databases all share the same schema history, eliminating drift.
+
+### Rules
+
+1. **NEVER modify the database directly.** Do not use phpMyAdmin, MySQL Workbench, the `mysql` CLI, or any other tool to alter tables, columns, indexes, or data in a way that affects the schema.
+
+2. **NEVER use `db.create_all()` for schema creation.** The Flask-SQLAlchemy `db.create_all()` call in `app.py` exists only as a safety net — it does **not** replace migrations. Models alone do not track schema changes over time.
+
+3. **NEVER add raw `ALTER TABLE` or `CREATE TABLE` statements in route handlers, socket events, or application code.** Schema changes belong in migration files only.
+
+4. **ALWAYS create a migration file** for any of the following changes:
+   - Creating a new table
+   - Adding, renaming, or removing a column
+   - Changing a column's type, default value, or nullability
+   - Adding or dropping indexes, unique constraints, or foreign keys
+   - Modifying table options (engine, charset, collation)
+
+5. **ALWAYS update the corresponding SQLAlchemy model** when you create a migration. The model in `models/` must match what the migration creates — they must stay in sync.
+
+6. **ALWAYS test migrations locally** before committing:
+   ```bash
+   python migrate.py migrate     # Apply your new migration
+   python migrate.py rollback    # Verify rollback works
+   python migrate.py migrate     # Re-apply to confirm idempotency
+   ```
+
+7. **NEVER edit a migration file that has already been run** on any environment (including by teammates). If you need to change something, create a new migration that alters the previous result.
+
+8. **Use the seeder for default data**, not migrations. Migrations are for schema; seeders (`database/seeders/seeder.py`) are for initial data.
+
+### Workflow: Adding a New Feature That Needs Schema Changes
+
+```bash
+# Step 1: Create a migration file
+python migrate.py make add_phone_number_to_users
+
+# Step 2: Edit the generated file in database/migrations/
+#         Implement up() and down() functions with raw SQL
+
+# Step 3: Update the SQLAlchemy model to match
+#         e.g., add `phone = db.Column(db.String(20))` to models/user.py
+
+# Step 4: Apply the migration
+python migrate.py migrate
+
+# Step 5: Verify
+python migrate.py status
+
+# Step 6: Test rollback
+python migrate.py rollback
+python migrate.py migrate
+
+# Step 7: Commit both migration file AND model changes together
+git add database/migrations/2026_03_13_*.py models/user.py
+git commit -m "feat: add phone number field to users"
+```
+
+### Workflow: Fresh Setup (New Developer / New Server)
+
+```bash
+# Creates database if needed + migration tracking table
+python migrate.py init
+
+# Runs all migration files in order
+python migrate.py migrate
+
+# Seeds default data (admin user, system config)
+python migrate.py seed
+```
+
+### Workflow: Pulling Teammate's Changes
+
+```bash
+git pull origin main
+
+# Apply any new migrations they added
+python migrate.py migrate
+```
+
+### Migration File Structure
+
+Every migration file must export two functions:
+
+```python
+def up(conn):
+    """Apply the migration — create tables, add columns, etc."""
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT NULL")
+    conn.commit()
+
+def down(conn):
+    """Reverse the migration — drop what up() created."""
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE users DROP COLUMN phone")
+    conn.commit()
+```
+
+**Both `up()` and `down()` are mandatory.** A migration without a working `down()` cannot be safely rolled back.
 
 ---
 

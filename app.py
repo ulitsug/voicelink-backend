@@ -4,7 +4,6 @@ import socket
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-from flask_migrate import Migrate
 from flask_socketio import SocketIO
 
 from config import Config
@@ -12,7 +11,6 @@ from models import db
 from sockets import register_socket_events
 
 # Initialize extensions
-migrate = Migrate()
 jwt = JWTManager()
 socketio = SocketIO(cors_allowed_origins="*", async_mode='eventlet')
 
@@ -23,7 +21,6 @@ def create_app():
 
     # Initialize extensions
     db.init_app(app)
-    migrate.init_app(app, db)
     jwt.init_app(app)
     CORS(app, resources={r"/api/*": {"origins": "*"}})
     socketio.init_app(app)
@@ -57,9 +54,8 @@ def create_app():
     def index():
         return {'status': 'ok', 'service': 'VoiceLink API', 'version': '1.0'}
 
-    # Create tables if they don't exist
+    # Seed super admin if not present (schema is managed by migrate.py)
     with app.app_context():
-        db.create_all()
         _seed_super_admin()
 
     return app
