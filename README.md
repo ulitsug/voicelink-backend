@@ -2,7 +2,7 @@
 
 Real-time communication platform backend built with **Flask**, **Flask-SocketIO**, and **MySQL**. Provides REST APIs and WebSocket events for voice/video calling (WebRTC), real-time chat, contacts, groups, and calendar scheduling.
 
-> **Frontend repo:** [voicelink-frontend](https://github.com/mubahood/voicelink-frontend)
+> **Frontend repo:** [voicelink-frontend](https://github.com/ulitsug/voicelink-frontend)
 
 ---
 
@@ -180,7 +180,7 @@ backend/
 
 ```bash
 # Clone the repository
-git clone https://github.com/mubahood/voicelink-backend.git
+git clone https://github.com/ulitsug/voicelink-backend.git
 cd voicelink-backend
 
 # Create virtual environment
