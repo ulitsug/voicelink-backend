@@ -42,6 +42,13 @@ def register_call_events(socketio):
         if not target_sid:
             target_info = _get_user_info(target_id)
             print(f'[CALL] target {target_id} is offline, sending call_error', flush=True)
+            # Send push notification for the missed call
+            try:
+                from services.push_service import send_call_notification
+                caller_info = _get_user_info(caller_id)
+                send_call_notification(target_id, caller_info['display_name'], data.get('call_type', 'voice'))
+            except Exception as e:
+                print(f'[Push] Call notification error: {e}', flush=True)
             emit('call_error', {'error': f'{target_info["display_name"]} is currently offline and cannot receive calls.'})
             return
 
@@ -57,6 +64,13 @@ def register_call_events(socketio):
 
         caller_info = _get_user_info(caller_id)
         print(f'[CALL] Emitting incoming_call to {target_sid} (user {target_id})', flush=True)
+
+        # Also send push notification (handles background/minimized tabs)
+        try:
+            from services.push_service import send_call_notification
+            send_call_notification(target_id, caller_info['display_name'], data.get('call_type', 'voice'))
+        except Exception as e:
+            print(f'[Push] Call notification error: {e}', flush=True)
 
         emit('incoming_call', {
             'caller_id': caller_id,

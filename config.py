@@ -37,3 +37,18 @@ class Config:
     TURN_SERVER_PORT = int(os.getenv('TURN_SERVER_PORT', 3478))
     TURN_USERNAME = os.getenv('TURN_USERNAME', 'voicelink')
     TURN_PASSWORD = os.getenv('TURN_PASSWORD', 'voicelink2026')
+
+    # VAPID keys for Web Push notifications
+    VAPID_PRIVATE_KEY = os.getenv(
+        'VAPID_PRIVATE_KEY',
+        '-----BEGIN PRIVATE KEY-----\n'
+        'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgmO1xeONqBW6GQYG9\n'
+        'tt7KiGv7qsTjEy94D5SBsHFEO5GhRANCAAS6GGoJhl+DVyLnCyY6hZSEY0aOeJMP\n'
+        '2LjCBf1/7MbPJl5WSGKIAQCj2vUG+r8CzFiHzBg6+VLIHbHjBDN0hDH8\n'
+        '-----END PRIVATE KEY-----\n'
+    )
+    VAPID_PUBLIC_KEY = os.getenv(
+        'VAPID_PUBLIC_KEY',
+        'BLoYagmGX4NXIucLJjqFlIRjRo54kw_YuMIF_X_sxs8mXlZIYogBAKPa9Qb6vwLMWIfMGDr5UsgdseMEM3SEMfw'
+    )
+    VAPID_CLAIMS_EMAIL = os.getenv('VAPID_CLAIMS_EMAIL', 'mailto:admin@voicelink.local')

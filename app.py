@@ -39,6 +39,7 @@ def create_app():
     from routes.groups import groups_bp
     from routes.calendar_routes import calendar_bp
     from routes.admin import admin_bp
+    from routes.push import push_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(contacts_bp)
@@ -47,6 +48,7 @@ def create_app():
     app.register_blueprint(groups_bp)
     app.register_blueprint(calendar_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(push_bp)
 
     # Register SocketIO events
     register_socket_events(socketio)

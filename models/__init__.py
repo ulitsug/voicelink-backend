@@ -8,4 +8,5 @@ from models.message import Message
 from models.call_log import CallLog
 from models.group import Group, GroupMember
 from models.calendar_event import CalendarEvent
+from models.push_subscription import PushSubscription
 from models.system_config import SystemConfig
