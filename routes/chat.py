@@ -195,3 +195,71 @@ def get_conversations(user):
         })
 
     return jsonify({'conversations': conversations})
+
+
+@chat_bp.route('/messages/<int:message_id>', methods=['DELETE'])
+@jwt_required_with_user
+def delete_message(user, message_id):
+    """Delete a single message. Only the sender can delete their own message."""
+    message = db.session.get(Message, message_id)
+    if not message:
+        return jsonify({'error': 'Message not found'}), 404
+
+    if message.sender_id != user.id:
+        return jsonify({'error': 'You can only delete your own messages'}), 403
+
+    # Delete associated file if it exists
+    if message.file_url:
+        filename = message.file_url.split('/')[-1]
+        upload_dir = current_app.config.get('UPLOAD_FOLDER', 'uploads')
+        filepath = os.path.join(upload_dir, filename)
+        if os.path.isfile(filepath):
+            os.remove(filepath)
+
+    receiver_id = message.receiver_id
+    group_id = message.group_id
+    db.session.delete(message)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message_id': message_id,
+        'receiver_id': receiver_id,
+        'group_id': group_id,
+    })
+
+
+@chat_bp.route('/conversations/<int:other_user_id>', methods=['DELETE'])
+@jwt_required_with_user
+def delete_conversation(user, other_user_id):
+    """Delete all messages in a 1-to-1 conversation between current user and other user."""
+    messages = Message.query.filter(
+        Message.group_id.is_(None),
+        (
+            ((Message.sender_id == user.id) & (Message.receiver_id == other_user_id)) |
+            ((Message.sender_id == other_user_id) & (Message.receiver_id == user.id))
+        )
+    ).all()
+
+    if not messages:
+        return jsonify({'error': 'No conversation found'}), 404
+
+    # Delete associated files
+    upload_dir = current_app.config.get('UPLOAD_FOLDER', 'uploads')
+    for msg in messages:
+        if msg.file_url:
+            filename = msg.file_url.split('/')[-1]
+            filepath = os.path.join(upload_dir, filename)
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+
+    count = len(messages)
+    for msg in messages:
+        db.session.delete(msg)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'other_user_id': other_user_id,
+        'deleted_count': count,
+    })

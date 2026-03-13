@@ -132,3 +132,88 @@ def register_chat_events(socketio):
     def handle_leave_group(data):
         group_id = data.get('group_id')
         leave_room(f'group_{group_id}')
+
+    @socketio.on('delete_message')
+    def handle_delete_message(data):
+        sender_id = get_sid_user(request.sid)
+        if not sender_id:
+            return
+
+        message_id = data.get('message_id')
+        if not message_id:
+            return
+
+        message = db.session.get(Message, message_id)
+        if not message or message.sender_id != sender_id:
+            return
+
+        receiver_id = message.receiver_id
+        group_id = message.group_id
+
+        # Delete associated file
+        if message.file_url:
+            import os
+            filename = message.file_url.split('/')[-1]
+            upload_dir = current_app.config.get('UPLOAD_FOLDER', 'uploads')
+            filepath = os.path.join(upload_dir, filename)
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+
+        db.session.delete(message)
+        db.session.commit()
+
+        delete_data = {'message_id': message_id, 'sender_id': sender_id}
+
+        if receiver_id:
+            target_sid = get_user_sid(receiver_id)
+            if target_sid:
+                emit('message_deleted', delete_data, room=target_sid)
+            emit('message_deleted', delete_data)
+        elif group_id:
+            members = GroupMember.query.filter_by(group_id=group_id).all()
+            for member in members:
+                if member.user_id != sender_id:
+                    member_sid = get_user_sid(member.user_id)
+                    if member_sid:
+                        emit('message_deleted', delete_data, room=member_sid)
+            emit('message_deleted', delete_data)
+
+    @socketio.on('delete_conversation')
+    def handle_delete_conversation(data):
+        user_id = get_sid_user(request.sid)
+        if not user_id:
+            return
+
+        other_user_id = data.get('other_user_id')
+        if not other_user_id:
+            return
+
+        import os
+        messages = Message.query.filter(
+            Message.group_id.is_(None),
+            (
+                ((Message.sender_id == user_id) & (Message.receiver_id == other_user_id)) |
+                ((Message.sender_id == other_user_id) & (Message.receiver_id == user_id))
+            )
+        ).all()
+
+        if not messages:
+            return
+
+        upload_dir = current_app.config.get('UPLOAD_FOLDER', 'uploads')
+        for msg in messages:
+            if msg.file_url:
+                filename = msg.file_url.split('/')[-1]
+                filepath = os.path.join(upload_dir, filename)
+                if os.path.isfile(filepath):
+                    os.remove(filepath)
+            db.session.delete(msg)
+        db.session.commit()
+
+        delete_data = {'other_user_id': other_user_id, 'deleted_by': user_id}
+        # Notify the other user
+        target_sid = get_user_sid(other_user_id)
+        if target_sid:
+            emit('conversation_deleted', delete_data, room=target_sid)
+        # Confirm to sender
+        emit('conversation_deleted', delete_data)

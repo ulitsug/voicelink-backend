@@ -16,6 +16,8 @@ class CallLog(db.Model):
     answered_at = db.Column(db.DateTime, nullable=True)
     ended_at = db.Column(db.DateTime, nullable=True)
     duration = db.Column(db.Integer, default=0)  # in seconds
+    end_reason = db.Column(db.String(30), nullable=True)  # normal, no_answer, rejected, error, network
+    quality_score = db.Column(db.Integer, nullable=True)  # 1-5 rating
 
     def to_dict(self):
         return {
@@ -29,6 +31,8 @@ class CallLog(db.Model):
             'answered_at': self.answered_at.isoformat() if self.answered_at else None,
             'ended_at': self.ended_at.isoformat() if self.ended_at else None,
             'duration': self.duration,
+            'end_reason': self.end_reason,
+            'quality_score': self.quality_score,
             'caller': self.caller.to_dict() if self.caller else None,
             'callee': self.callee.to_dict() if self.callee else None,
         }
