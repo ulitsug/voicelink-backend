@@ -66,6 +66,15 @@ def create_event(user):
     return jsonify({'event': event.to_dict()}), 201
 
 
+@calendar_bp.route('/events/<int:event_id>', methods=['GET'])
+@jwt_required_with_user
+def get_event(user, event_id):
+    event = db.session.get(CalendarEvent, event_id)
+    if not event:
+        return jsonify({'error': 'Event not found'}), 404
+    return jsonify({'event': event.to_dict()})
+
+
 @calendar_bp.route('/events/<int:event_id>', methods=['PUT'])
 @jwt_required_with_user
 def update_event(user, event_id):

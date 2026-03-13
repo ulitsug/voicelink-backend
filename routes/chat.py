@@ -10,9 +10,15 @@ from utils.auth import jwt_required_with_user
 chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
 
 
-@chat_bp.route('/messages/<int:other_user_id>', methods=['GET'])
+@chat_bp.route('/messages/<int:other_user_id>', methods=['GET', 'DELETE'])
 @jwt_required_with_user
-def get_messages(user, other_user_id):
+def handle_messages_by_id(user, other_user_id):
+    if request.method == 'DELETE':
+        return _delete_message(user, other_user_id)
+    return _get_messages(user, other_user_id)
+
+
+def _get_messages(user, other_user_id):
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 50, type=int)
     per_page = min(per_page, 100)
@@ -197,9 +203,7 @@ def get_conversations(user):
     return jsonify({'conversations': conversations})
 
 
-@chat_bp.route('/messages/<int:message_id>', methods=['DELETE'])
-@jwt_required_with_user
-def delete_message(user, message_id):
+def _delete_message(user, message_id):
     """Delete a single message. Only the sender can delete their own message."""
     message = db.session.get(Message, message_id)
     if not message:
