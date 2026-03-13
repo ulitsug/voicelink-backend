@@ -32,29 +32,37 @@ MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'datab
 # ─── Database Connection ──────────────────────────────────────────────
 def get_connection():
     """Get a raw PyMySQL connection from .env settings."""
-    return pymysql.connect(
-        host=os.getenv('DB_HOST', '127.0.0.1'),
-        port=int(os.getenv('DB_PORT', 3306)),
-        user=os.getenv('DB_USERNAME', 'root'),
-        password=os.getenv('DB_PASSWORD', 'root'),
-        database=os.getenv('DB_DATABASE', 'py_voip'),
-        unix_socket=os.getenv('DB_SOCKET', '/Applications/MAMP/tmp/mysql/mysql.sock'),
-        charset='utf8mb4',
-        autocommit=False,
-    )
+    socket_path = os.getenv('DB_SOCKET', '/Applications/MAMP/tmp/mysql/mysql.sock')
+    conn_kwargs = {
+        'host': os.getenv('DB_HOST', '127.0.0.1'),
+        'port': int(os.getenv('DB_PORT', 3306)),
+        'user': os.getenv('DB_USERNAME', 'root'),
+        'password': os.getenv('DB_PASSWORD', 'root'),
+        'database': os.getenv('DB_DATABASE', 'py_voip'),
+        'charset': 'utf8mb4',
+        'autocommit': False,
+    }
+    # Only add unix_socket if it exists (Unix-like systems)
+    if os.path.exists(socket_path):
+        conn_kwargs['unix_socket'] = socket_path
+    return pymysql.connect(**conn_kwargs)
 
 
 def get_connection_no_db():
     """Get a connection without selecting a database (for CREATE DATABASE)."""
-    return pymysql.connect(
-        host=os.getenv('DB_HOST', '127.0.0.1'),
-        port=int(os.getenv('DB_PORT', 3306)),
-        user=os.getenv('DB_USERNAME', 'root'),
-        password=os.getenv('DB_PASSWORD', 'root'),
-        unix_socket=os.getenv('DB_SOCKET', '/Applications/MAMP/tmp/mysql/mysql.sock'),
-        charset='utf8mb4',
-        autocommit=True,
-    )
+    socket_path = os.getenv('DB_SOCKET', '/Applications/MAMP/tmp/mysql/mysql.sock')
+    conn_kwargs = {
+        'host': os.getenv('DB_HOST', '127.0.0.1'),
+        'port': int(os.getenv('DB_PORT', 3306)),
+        'user': os.getenv('DB_USERNAME', 'root'),
+        'password': os.getenv('DB_PASSWORD', 'root'),
+        'charset': 'utf8mb4',
+        'autocommit': True,
+    }
+    # Only add unix_socket if it exists (Unix-like systems)
+    if os.path.exists(socket_path):
+        conn_kwargs['unix_socket'] = socket_path
+    return pymysql.connect(**conn_kwargs)
 
 
 # ─── Migration Table ─────────────────────────────────────────────────

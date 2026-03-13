@@ -10,7 +10,7 @@ class Config:
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'voicelink-default-jwt-key-2026')
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', 315360000)))
 
-    # MySQL via MAMP socket
+    # MySQL via MAMP socket (Unix) or TCP/IP (Windows/TCP)
     DB_USER = os.getenv('DB_USERNAME', 'root')
     DB_PASS = os.getenv('DB_PASSWORD', 'root')
     DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
@@ -18,9 +18,11 @@ class Config:
     DB_NAME = os.getenv('DB_DATABASE', 'py_voip')
     DB_SOCKET = os.getenv('DB_SOCKET', '/Applications/MAMP/tmp/mysql/mysql.sock')
 
+    # Build SQLAlchemy connection string (Windows uses TCP/IP, Unix can use socket)
+    _base_uri = f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     SQLALCHEMY_DATABASE_URI = (
-        f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        f"?unix_socket={DB_SOCKET}"
+        _base_uri if not os.path.exists(DB_SOCKET)
+        else f"{_base_uri}?unix_socket={DB_SOCKET}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

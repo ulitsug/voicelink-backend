@@ -12,7 +12,7 @@ from sockets import register_socket_events
 
 # Initialize extensions
 jwt = JWTManager()
-socketio = SocketIO(cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(cors_allowed_origins="*", async_mode='threading')
 
 
 def create_app():
@@ -129,6 +129,5 @@ if __name__ == '__main__':
         use_reloader=False,
         host=Config.SERVER_HOST,
         port=port,
-        certfile=cert_path if ssl_context else None,
-        keyfile=key_path if ssl_context else None,
+        ssl_context=ssl_context,
     )
