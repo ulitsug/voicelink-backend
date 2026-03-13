@@ -134,4 +134,9 @@ def register_presence_events(socketio):
         sid = request.sid
         user_id = sid_to_user.get(sid)
         if user_id:
+            # Ensure the user is still registered as online
+            if user_id not in user_to_sid or user_to_sid[user_id] != sid:
+                # Re-register if mapping was lost (e.g. after a server restart)
+                user_to_sid[user_id] = sid
+                sid_to_user[sid] = user_id
             emit('heartbeat_ack', {'status': 'ok', 'user_id': user_id})
