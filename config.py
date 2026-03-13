@@ -54,3 +54,15 @@ class Config:
         'BLoYagmGX4NXIucLJjqFlIRjRo54kw_YuMIF_X_sxs8mXlZIYogBAKPa9Qb6vwLMWIfMGDr5UsgdseMEM3SEMfw'
     )
     VAPID_CLAIMS_EMAIL = os.getenv('VAPID_CLAIMS_EMAIL', 'mailto:admin@voicelink.local')
+
+    # SMTP Email Settings
+    SMTP_HOST = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+    SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
+    SMTP_USE_TLS = os.getenv('SMTP_USE_TLS', 'true').lower() == 'true'
+    SMTP_USERNAME = os.getenv('SMTP_USERNAME', '')
+    SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+    SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL', 'noreply@voicelink.local')
+    SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'VoiceLink')
+
+    # App URL (used for email links)
+    APP_URL = os.getenv('APP_URL', 'https://10.10.23.68')

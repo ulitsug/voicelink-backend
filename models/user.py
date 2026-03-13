@@ -1,4 +1,5 @@
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 
 import bcrypt
 
@@ -18,6 +19,11 @@ class User(db.Model):
     role = db.Column(db.String(20), default='user')  # super_admin, admin, user
     status = db.Column(db.String(20), default='offline')  # online, offline, busy, away
     public_key = db.Column(db.Text, nullable=True)  # For E2E encryption
+    email_verified = db.Column(db.Boolean, default=False, nullable=False)
+    verification_token = db.Column(db.String(255), nullable=True)
+    verification_token_expires = db.Column(db.DateTime, nullable=True)
+    reset_token = db.Column(db.String(255), nullable=True)
+    reset_token_expires = db.Column(db.DateTime, nullable=True)
     last_seen = db.Column(db.DateTime, default=datetime.utcnow)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -48,6 +54,16 @@ class User(db.Model):
     def is_super_admin(self):
         return self.role == 'super_admin'
 
+    def generate_verification_token(self):
+        self.verification_token = secrets.token_urlsafe(48)
+        self.verification_token_expires = datetime.utcnow() + timedelta(hours=48)
+        return self.verification_token
+
+    def generate_reset_token(self):
+        self.reset_token = secrets.token_urlsafe(48)
+        self.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+        return self.reset_token
+
     def to_dict(self, include_email=False):
         data = {
             'id': self.id,
@@ -57,6 +73,7 @@ class User(db.Model):
             'avatar_url': self.avatar_url,
             'role': self.role or 'user',
             'status': self.status,
+            'email_verified': self.email_verified,
             'last_seen': self.last_seen.isoformat() if self.last_seen else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }

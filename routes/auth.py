@@ -1,5 +1,6 @@
 import os
 import uuid
+from datetime import datetime
 
 from flask import Blueprint, jsonify, request, current_app, send_from_directory
 from flask_jwt_extended import create_access_token
@@ -45,18 +46,16 @@ def register():
         username=username,
         email=email,
         display_name=display_name,
+        email_verified=False,
     )
     user.set_password(password)
 
     db.session.add(user)
     db.session.commit()
 
-    access_token = create_access_token(identity=str(user.id))
-
     return jsonify({
-        'message': 'Registration successful',
-        'user': user.to_dict(include_email=True),
-        'access_token': access_token,
+        'message': 'Registration successful. Please wait for admin to send you a verification email.',
+        'pending_verification': True,
     }), 201
 
 
@@ -80,6 +79,10 @@ def login():
     if not user or not user.check_password(password):
         return jsonify({'error': 'Invalid credentials'}), 401
 
+    # Admin/super_admin bypass email verification
+    if not user.is_admin and not user.email_verified:
+        return jsonify({'error': 'Email not verified. Please check your email for a verification link or contact admin.'}), 403
+
     access_token = create_access_token(identity=str(user.id))
 
     return jsonify({
@@ -87,6 +90,88 @@ def login():
         'user': user.to_dict(include_email=True),
         'access_token': access_token,
     })
+
+
+@auth_bp.route('/verify-email', methods=['POST'])
+def verify_email():
+    data = request.get_json()
+    token = data.get('token', '').strip() if data else ''
+
+    if not token:
+        return jsonify({'error': 'Verification token is required'}), 400
+
+    user = User.query.filter_by(verification_token=token).first()
+    if not user:
+        return jsonify({'error': 'Invalid verification token'}), 400
+
+    if user.verification_token_expires and user.verification_token_expires < datetime.utcnow():
+        return jsonify({'error': 'Verification token has expired. Please request a new one from admin.'}), 400
+
+    user.email_verified = True
+    user.verification_token = None
+    user.verification_token_expires = None
+    db.session.commit()
+
+    access_token = create_access_token(identity=str(user.id))
+
+    return jsonify({
+        'message': 'Email verified successfully. You can now log in.',
+        'user': user.to_dict(include_email=True),
+        'access_token': access_token,
+    })
+
+
+@auth_bp.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email', '').strip().lower() if data else ''
+
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+
+    user = User.query.filter_by(email=email).first()
+
+    # Always return success to not leak whether email exists
+    if not user:
+        return jsonify({'message': 'If the email exists, a password reset link has been sent.'})
+
+    token = user.generate_reset_token()
+    db.session.commit()
+
+    from services.email_service import send_password_reset_email
+    send_password_reset_email(user, token)
+
+    return jsonify({'message': 'If the email exists, a password reset link has been sent.'})
+
+
+@auth_bp.route('/reset-password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    token = data.get('token', '').strip()
+    new_password = data.get('password', '')
+
+    if not token:
+        return jsonify({'error': 'Reset token is required'}), 400
+
+    if len(new_password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
+    user = User.query.filter_by(reset_token=token).first()
+    if not user:
+        return jsonify({'error': 'Invalid reset token'}), 400
+
+    if user.reset_token_expires and user.reset_token_expires < datetime.utcnow():
+        return jsonify({'error': 'Reset token has expired. Please request a new one.'}), 400
+
+    user.set_password(new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    db.session.commit()
+
+    return jsonify({'message': 'Password reset successfully. You can now log in with your new password.'})
 
 
 @auth_bp.route('/me', methods=['GET'])

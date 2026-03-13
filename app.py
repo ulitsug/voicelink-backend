@@ -73,9 +73,13 @@ def _seed_super_admin():
             admin.email = 'admin@voicelink.local'
             admin.display_name = 'System Admin'
             admin.role = 'super_admin'
+            admin.email_verified = True
             admin.set_password('4321')
             db.session.commit()
             print('🔑 Super admin credentials reset (username: admin, password: 4321)')
+        elif not admin.email_verified:
+            admin.email_verified = True
+            db.session.commit()
     else:
         admin = User(
             id=1,
@@ -83,6 +87,7 @@ def _seed_super_admin():
             email='admin@voicelink.local',
             display_name='System Admin',
             role='super_admin',
+            email_verified=True,
         )
         admin.set_password('4321')
         db.session.add(admin)

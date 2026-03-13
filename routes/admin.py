@@ -184,6 +184,7 @@ def create_user(user):
         email=email,
         display_name=display_name,
         role=role,
+        email_verified=data.get('email_verified', False),
     )
     new_user.set_password(password)
     db.session.add(new_user)
@@ -339,3 +340,98 @@ def call_stats(user):
         'by_type': {t: c for t, c in by_type},
         'avg_duration_seconds': round(float(avg_duration)),
     })
+
+
+# ── Email Verification Management ───────────────────────────
+
+@admin_bp.route('/users/pending-verification', methods=['GET'])
+@admin_required
+def pending_verification_users(user):
+    """List users whose email is not yet verified."""
+    users = User.query.filter_by(email_verified=False).order_by(User.created_at.desc()).all()
+    return jsonify({
+        'users': [u.to_dict(include_email=True) for u in users],
+        'total': len(users),
+    })
+
+
+@admin_bp.route('/users/<int:user_id>/send-verification', methods=['POST'])
+@admin_required
+def send_verification(user, user_id):
+    """Admin sends a verification email to a user."""
+    target = db.session.get(User, user_id)
+    if not target:
+        return jsonify({'error': 'User not found'}), 404
+
+    if target.email_verified:
+        return jsonify({'error': 'User email is already verified'}), 400
+
+    token = target.generate_verification_token()
+    db.session.commit()
+
+    from services.email_service import send_verification_email
+    sent = send_verification_email(target, token)
+
+    if sent:
+        return jsonify({'message': f'Verification email sent to {target.email}'})
+    else:
+        return jsonify({'error': 'Failed to send email. Check SMTP configuration.'}), 500
+
+
+@admin_bp.route('/users/<int:user_id>/verify-email', methods=['POST'])
+@admin_required
+def admin_verify_email(user, user_id):
+    """Admin manually verifies a user's email."""
+    target = db.session.get(User, user_id)
+    if not target:
+        return jsonify({'error': 'User not found'}), 404
+
+    target.email_verified = True
+    target.verification_token = None
+    target.verification_token_expires = None
+    db.session.commit()
+
+    return jsonify({
+        'message': f'Email verified for {target.username}',
+        'user': target.to_dict(include_email=True),
+    })
+
+
+@admin_bp.route('/users/<int:user_id>/unverify-email', methods=['POST'])
+@admin_required
+def admin_unverify_email(user, user_id):
+    """Admin revokes a user's email verification."""
+    target = db.session.get(User, user_id)
+    if not target:
+        return jsonify({'error': 'User not found'}), 404
+
+    if target.is_super_admin:
+        return jsonify({'error': 'Cannot unverify super admin'}), 403
+
+    target.email_verified = False
+    db.session.commit()
+
+    return jsonify({
+        'message': f'Email verification revoked for {target.username}',
+        'user': target.to_dict(include_email=True),
+    })
+
+
+@admin_bp.route('/users/<int:user_id>/send-reset', methods=['POST'])
+@admin_required
+def admin_send_reset(user, user_id):
+    """Admin sends a password reset email to a user."""
+    target = db.session.get(User, user_id)
+    if not target:
+        return jsonify({'error': 'User not found'}), 404
+
+    token = target.generate_reset_token()
+    db.session.commit()
+
+    from services.email_service import send_password_reset_email
+    sent = send_password_reset_email(target, token)
+
+    if sent:
+        return jsonify({'message': f'Password reset email sent to {target.email}'})
+    else:
+        return jsonify({'error': 'Failed to send email. Check SMTP configuration.'}), 500
