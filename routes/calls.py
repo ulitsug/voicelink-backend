@@ -115,6 +115,39 @@ def update_call_log(user, call_id):
         call_log.ended_at = datetime.utcnow()
         if call_log.answered_at:
             call_log.duration = int((call_log.ended_at - call_log.answered_at).total_seconds())
+    if data.get('end_reason'):
+        call_log.end_reason = data['end_reason']
+    if data.get('quality_score') is not None:
+        score = data['quality_score']
+        if isinstance(score, int) and 1 <= score <= 5:
+            call_log.quality_score = score
 
     db.session.commit()
     return jsonify({'call': call_log.to_dict()})
+
+
+@calls_bp.route('/active', methods=['GET'])
+@jwt_required_with_user
+def get_active_calls(user):
+    """Return list of users currently in active calls."""
+    from sockets.call_events import active_calls, call_meta, call_media_state
+    from models.user import User
+
+    seen = set()
+    result = []
+    for uid, partner_id in active_calls.items():
+        if uid in seen:
+            continue
+        seen.add(uid)
+        seen.add(partner_id)
+        caller = db.session.get(User, uid)
+        callee = db.session.get(User, partner_id)
+        meta = call_meta.get(uid, call_meta.get(partner_id, {}))
+        result.append({
+            'caller': caller.to_dict() if caller else {'id': uid},
+            'callee': callee.to_dict() if callee else {'id': partner_id},
+            'call_type': meta.get('call_type', 'voice'),
+            'started_at': meta.get('started_at'),
+        })
+
+    return jsonify({'active_calls': result, 'count': len(result)})

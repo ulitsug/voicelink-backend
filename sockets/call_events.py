@@ -1,3 +1,5 @@
+import time
+
 from flask import request
 from flask_socketio import emit
 
@@ -8,7 +10,14 @@ from sockets.presence_events import get_user_sid, get_sid_user
 
 # In-memory active call tracking: user_id -> partner_user_id
 active_calls = {}
+# Call metadata: call_key -> { started_at, call_type, caller_id, callee_id }
+call_meta = {}
+# Media state per user in call: user_id -> { muted, video_on, screen_sharing }
+call_media_state = {}
+# Ring start times for timeout: caller_id -> timestamp
+ring_start = {}
 
+RING_TIMEOUT_SECONDS = 45
 
 def _get_user_info(user_id):
     """Look up user display info for signaling payloads."""
@@ -61,6 +70,12 @@ def register_call_events(socketio):
 
         # Track the pending call
         active_calls[caller_id] = target_id
+        ring_start[caller_id] = time.time()
+        call_media_state[caller_id] = {
+            'muted': False,
+            'video_on': data.get('call_type') == 'video',
+            'screen_sharing': False,
+        }
 
         caller_info = _get_user_info(caller_id)
         print(f'[CALL] Emitting incoming_call to {target_sid} (user {target_id})', flush=True)
@@ -95,6 +110,23 @@ def register_call_events(socketio):
         # Track both sides as in active call
         active_calls[callee_id] = caller_id
         active_calls[caller_id] = callee_id
+        ring_start.pop(caller_id, None)
+
+        # Initialize media state for callee
+        call_media_state[callee_id] = {
+            'muted': False,
+            'video_on': data.get('call_type', 'voice') == 'video',
+            'screen_sharing': False,
+        }
+
+        # Store call metadata
+        call_key = tuple(sorted([caller_id, callee_id]))
+        call_meta[call_key] = {
+            'started_at': time.time(),
+            'call_type': data.get('call_type', 'voice'),
+            'caller_id': caller_id,
+            'callee_id': callee_id,
+        }
 
         callee_info = _get_user_info(callee_id)
 
@@ -105,6 +137,16 @@ def register_call_events(socketio):
                 'answer': data.get('answer'),
                 'call_id': data.get('call_id'),
             }, room=caller_sid)
+
+        # Broadcast that both users are now in a call
+        emit('user_call_status', {
+            'user_id': caller_id,
+            'in_call': True,
+        }, broadcast=True)
+        emit('user_call_status', {
+            'user_id': callee_id,
+            'in_call': True,
+        }, broadcast=True)
 
     @socketio.on('call_rejected')
     def handle_call_rejected(data):
@@ -121,6 +163,9 @@ def register_call_events(socketio):
         # Clear call tracking
         active_calls.pop(caller_id, None)
         active_calls.pop(user_id, None)
+        ring_start.pop(caller_id, None)
+        call_media_state.pop(caller_id, None)
+        call_media_state.pop(user_id, None)
 
         if caller_sid:
             emit('call_rejected', {
@@ -159,13 +204,30 @@ def register_call_events(socketio):
         # Clear call tracking for both sides
         active_calls.pop(user_id, None)
         active_calls.pop(target_id, None)
+        ring_start.pop(user_id, None)
+        ring_start.pop(target_id, None)
+        call_media_state.pop(user_id, None)
+        call_media_state.pop(target_id, None)
+        call_key = tuple(sorted([user_id, target_id]))
+        call_meta.pop(call_key, None)
 
         target_sid = get_user_sid(target_id)
         if target_sid:
             emit('call_ended', {
                 'from_id': user_id,
                 'call_id': data.get('call_id'),
+                'reason': data.get('reason', 'ended'),
             }, room=target_sid)
+
+        # Broadcast that both users are no longer in a call
+        emit('user_call_status', {
+            'user_id': user_id,
+            'in_call': False,
+        }, broadcast=True)
+        emit('user_call_status', {
+            'user_id': target_id,
+            'in_call': False,
+        }, broadcast=True)
 
     # Screen sharing signaling
     @socketio.on('screen_share_started')
@@ -276,3 +338,114 @@ def register_call_events(socketio):
                         'user': user_info,
                         'offer': data.get('offer'),
                     }, room=target_sid)
+
+    # ── Media state synchronization ──────────────────────────
+
+    @socketio.on('media_state_changed')
+    def handle_media_state_changed(data):
+        """Sync mute/video/screen state to the call partner."""
+        user_id = get_sid_user(request.sid)
+        if not user_id:
+            return
+
+        # Update local tracking
+        call_media_state[user_id] = {
+            'muted': data.get('muted', False),
+            'video_on': data.get('video_on', False),
+            'screen_sharing': data.get('screen_sharing', False),
+        }
+
+        target_id = data.get('target_id')
+        if isinstance(target_id, str):
+            target_id = int(target_id)
+        target_sid = get_user_sid(target_id)
+        if target_sid:
+            emit('remote_media_state', {
+                'user_id': user_id,
+                'muted': data.get('muted', False),
+                'video_on': data.get('video_on', False),
+                'screen_sharing': data.get('screen_sharing', False),
+            }, room=target_sid)
+
+    # ── Call reconnection signaling ──────────────────────────
+
+    @socketio.on('call_reconnecting')
+    def handle_call_reconnecting(data):
+        """Notify call partner that we are reconnecting (ICE restart in progress)."""
+        user_id = get_sid_user(request.sid)
+        if not user_id:
+            return
+        target_id = data.get('target_id')
+        if isinstance(target_id, str):
+            target_id = int(target_id)
+        target_sid = get_user_sid(target_id)
+        if target_sid:
+            emit('call_reconnecting', {
+                'user_id': user_id,
+            }, room=target_sid)
+
+    @socketio.on('call_reconnected')
+    def handle_call_reconnected(data):
+        """Notify call partner that reconnection succeeded."""
+        user_id = get_sid_user(request.sid)
+        if not user_id:
+            return
+        target_id = data.get('target_id')
+        if isinstance(target_id, str):
+            target_id = int(target_id)
+        target_sid = get_user_sid(target_id)
+        if target_sid:
+            emit('call_reconnected', {
+                'user_id': user_id,
+            }, room=target_sid)
+
+    # ── Ring timeout check ───────────────────────────────────
+
+    @socketio.on('check_ring_timeout')
+    def handle_check_ring_timeout(data):
+        """Called by caller periodically to check if ring has timed out."""
+        user_id = get_sid_user(request.sid)
+        if not user_id:
+            return
+        start = ring_start.get(user_id)
+        if start and (time.time() - start) > RING_TIMEOUT_SECONDS:
+            # Timeout — auto-end the call attempt
+            target_id = active_calls.pop(user_id, None)
+            ring_start.pop(user_id, None)
+            call_media_state.pop(user_id, None)
+            if target_id:
+                active_calls.pop(target_id, None)
+                call_media_state.pop(target_id, None)
+                target_sid = get_user_sid(target_id)
+                if target_sid:
+                    emit('call_ended', {
+                        'from_id': user_id,
+                        'reason': 'no_answer',
+                        'call_id': data.get('call_id'),
+                    }, room=target_sid)
+            emit('call_error', {
+                'error': 'No answer. The call was not picked up.',
+                'reason': 'timeout',
+            })
+
+    # ── Call quality report ──────────────────────────────────
+
+    @socketio.on('call_quality_report')
+    def handle_call_quality_report(data):
+        """Receive quality stats from a client and relay to the partner."""
+        user_id = get_sid_user(request.sid)
+        if not user_id:
+            return
+        target_id = data.get('target_id')
+        if isinstance(target_id, str):
+            target_id = int(target_id)
+        target_sid = get_user_sid(target_id)
+        if target_sid:
+            emit('partner_quality_report', {
+                'user_id': user_id,
+                'quality': data.get('quality', 'good'),
+                'rtt': data.get('rtt', 0),
+                'packet_loss': data.get('packet_loss', 0),
+                'bitrate_in': data.get('bitrate_in', 0),
+                'bitrate_out': data.get('bitrate_out', 0),
+            }, room=target_sid)

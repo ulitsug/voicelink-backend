@@ -11,6 +11,10 @@ from models.user import User
 sid_to_user = {}
 # Maps user_id to socket SID
 user_to_sid = {}
+# Last heartbeat timestamp per user_id (for stale detection)
+user_last_heartbeat = {}
+# User activity info: user_id -> { last_activity: datetime, device: str }
+user_activity = {}
 
 
 def get_user_sid(user_id):
@@ -21,6 +25,11 @@ def get_user_sid(user_id):
 def get_sid_user(sid):
     """Get the user_id for a given socket SID."""
     return sid_to_user.get(sid)
+
+
+def get_online_user_ids():
+    """Return list of currently online user IDs."""
+    return list(user_to_sid.keys())
 
 
 def register_presence_events(socketio):
@@ -36,6 +45,8 @@ def register_presence_events(socketio):
         print(f'[SOCKET] Client disconnected: sid={sid} user_id={user_id}', flush=True)
         if user_id:
             user_to_sid.pop(user_id, None)
+            user_last_heartbeat.pop(user_id, None)
+            user_activity.pop(user_id, None)
 
             # Clean up any active calls
             from sockets.call_events import active_calls
@@ -56,11 +67,12 @@ def register_presence_events(socketio):
                 user.last_seen = datetime.utcnow()
                 db.session.commit()
 
-                # Notify all clients
+                # Notify all clients with last_seen
                 emit('user_status_changed', {
                     'user_id': user_id,
                     'status': 'offline',
                     'username': user.username,
+                    'last_seen': user.last_seen.isoformat(),
                 }, broadcast=True)
 
             print(f'[SOCKET] User disconnected: {user_id}', flush=True)
@@ -94,6 +106,11 @@ def register_presence_events(socketio):
         # Register session
         sid_to_user[request.sid] = user_id
         user_to_sid[user_id] = request.sid
+        user_last_heartbeat[user_id] = datetime.utcnow()
+        user_activity[user_id] = {
+            'last_activity': datetime.utcnow(),
+            'device': data.get('device', 'web'),
+        }
 
         # Join personal room
         join_room(f'user_{user_id}')
@@ -102,13 +119,24 @@ def register_presence_events(socketio):
         user.status = 'online'
         db.session.commit()
 
-        # Get online users
+        # Get online users with enriched data
         online_user_ids = list(user_to_sid.keys())
         online_users = User.query.filter(User.id.in_(online_user_ids)).all() if online_user_ids else []
 
+        # Build enriched online user list
+        online_users_data = []
+        for u in online_users:
+            udata = u.to_dict()
+            activity = user_activity.get(u.id, {})
+            udata['device'] = activity.get('device', 'web')
+            # Check if user is in an active call
+            from sockets.call_events import active_calls
+            udata['in_call'] = u.id in active_calls
+            online_users_data.append(udata)
+
         emit('authenticated', {
             'user': user.to_dict(),
-            'online_users': [u.to_dict() for u in online_users],
+            'online_users': online_users_data,
         })
 
         # Notify others
@@ -116,6 +144,8 @@ def register_presence_events(socketio):
             'user_id': user_id,
             'status': 'online',
             'username': user.username,
+            'display_name': user.display_name,
+            'avatar_url': user.avatar_url,
         }, broadcast=True, include_self=False)
 
         print(f'[SOCKET] User authenticated: {user.username} (ID: {user_id})', flush=True)
@@ -124,14 +154,94 @@ def register_presence_events(socketio):
     def handle_get_online_users():
         online_user_ids = list(user_to_sid.keys())
         online_users = User.query.filter(User.id.in_(online_user_ids)).all() if online_user_ids else []
+
+        from sockets.call_events import active_calls
+        online_users_data = []
+        for u in online_users:
+            udata = u.to_dict()
+            activity = user_activity.get(u.id, {})
+            udata['device'] = activity.get('device', 'web')
+            udata['in_call'] = u.id in active_calls
+            online_users_data.append(udata)
+
         emit('online_users', {
-            'users': [u.to_dict() for u in online_users],
+            'users': online_users_data,
         })
 
     @socketio.on('heartbeat')
-    def handle_heartbeat():
-        """Client-side heartbeat for keeping socket session alive."""
+    def handle_heartbeat(data=None):
+        """Client-side heartbeat for keeping socket session alive.
+        Optionally accepts { activity: 'active'|'idle', device: str }."""
         sid = request.sid
         user_id = sid_to_user.get(sid)
         if user_id:
-            emit('heartbeat_ack', {'status': 'ok', 'user_id': user_id})
+            now = datetime.utcnow()
+            user_last_heartbeat[user_id] = now
+
+            # Update activity info if provided
+            if data and isinstance(data, dict):
+                activity = user_activity.get(user_id, {})
+                activity['last_activity'] = now
+                if data.get('device'):
+                    activity['device'] = data['device']
+                user_activity[user_id] = activity
+
+                # Update user status based on activity
+                user = db.session.get(User, user_id)
+                if user:
+                    new_status = 'away' if data.get('activity') == 'idle' else 'online'
+                    if user.status != new_status:
+                        user.status = new_status
+                        db.session.commit()
+                        emit('user_status_changed', {
+                            'user_id': user_id,
+                            'status': new_status,
+                            'username': user.username,
+                        }, broadcast=True)
+
+            emit('heartbeat_ack', {
+                'status': 'ok',
+                'user_id': user_id,
+                'server_time': now.isoformat(),
+            })
+
+    @socketio.on('update_status')
+    def handle_update_status(data):
+        """Manually set user status: 'online', 'away', 'busy', 'dnd'."""
+        user_id = get_sid_user(request.sid)
+        if not user_id:
+            return
+        new_status = data.get('status')
+        if new_status not in ('online', 'away', 'busy', 'dnd'):
+            return
+        user = db.session.get(User, user_id)
+        if user:
+            user.status = new_status
+            db.session.commit()
+            emit('user_status_changed', {
+                'user_id': user_id,
+                'status': new_status,
+                'username': user.username,
+            }, broadcast=True)
+
+    @socketio.on('ping_user')
+    def handle_ping_user(data):
+        """Check if a specific user is truly online (connection alive)."""
+        target_id = data.get('user_id')
+        if target_id:
+            if isinstance(target_id, str):
+                target_id = int(target_id)
+            is_online = target_id in user_to_sid
+            last_hb = user_last_heartbeat.get(target_id)
+            stale = False
+            if last_hb and is_online:
+                stale = (datetime.utcnow() - last_hb).total_seconds() > 60
+            user = db.session.get(User, target_id)
+            from sockets.call_events import active_calls
+            emit('user_ping_result', {
+                'user_id': target_id,
+                'online': is_online and not stale,
+                'in_call': target_id in active_calls,
+                'status': user.status if user else 'offline',
+                'last_seen': user.last_seen.isoformat() if user and user.last_seen else None,
+            })
