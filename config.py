@@ -56,12 +56,13 @@ class Config:
     VAPID_CLAIMS_EMAIL = os.getenv('VAPID_CLAIMS_EMAIL', 'mailto:admin@voicelink.local')
 
     # SMTP Email Settings
-    SMTP_HOST = os.getenv('SMTP_HOST', 'smtp.gmail.com')
-    SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
-    SMTP_USE_TLS = os.getenv('SMTP_USE_TLS', 'true').lower() == 'true'
-    SMTP_USERNAME = os.getenv('SMTP_USERNAME', '')
-    SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
-    SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL', 'noreply@voicelink.local')
+    SMTP_HOST = os.getenv('SMTP_HOST', 'mail.schooldynamics.ug')
+    SMTP_PORT = int(os.getenv('SMTP_PORT', 465))
+    SMTP_USE_SSL = os.getenv('SMTP_USE_SSL', 'true').lower() == 'true'
+    SMTP_USE_TLS = os.getenv('SMTP_USE_TLS', 'false').lower() == 'true'
+    SMTP_USERNAME = os.getenv('SMTP_USERNAME', 'muhindo@schooldynamics.ug')
+    SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', 'C4HUOB30]m{x')
+    SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL', 'muhindo@schooldynamics.ug')
     SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'VoiceLink')
 
     # App URL (used for email links)

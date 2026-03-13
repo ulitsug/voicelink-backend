@@ -42,17 +42,16 @@ def register_chat_events(socketio):
             target_sid = get_user_sid(receiver_id)
             if target_sid:
                 emit('new_message', msg_data, room=target_sid)
-            else:
-                # User is offline — send push notification
-                try:
-                    from services.push_service import send_message_notification
-                    from models.user import User
-                    sender = db.session.get(User, sender_id)
-                    sender_name = sender.display_name if sender else 'Someone'
-                    preview = content if message_type == 'text' else f'Sent a {message_type}'
-                    send_message_notification(receiver_id, sender_name, preview)
-                except Exception as e:
-                    print(f'[Push] Chat notification error: {e}', flush=True)
+            # Send push notification regardless (covers background/minimized tabs and offline)
+            try:
+                from services.push_service import send_message_notification
+                from models.user import User
+                sender = db.session.get(User, sender_id)
+                sender_name = sender.display_name if sender else 'Someone'
+                preview = content if message_type == 'text' else f'Sent a {message_type}'
+                send_message_notification(receiver_id, sender_name, preview)
+            except Exception as e:
+                print(f'[Push] Chat notification error: {e}', flush=True)
             # Also send back to sender for confirmation
             emit('message_sent', msg_data)
         elif group_id:

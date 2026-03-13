@@ -9,13 +9,17 @@ from flask import current_app
 def _get_smtp_connection():
     """Create an SMTP connection based on app config."""
     host = current_app.config.get('SMTP_HOST', 'localhost')
-    port = current_app.config.get('SMTP_PORT', 587)
-    use_tls = current_app.config.get('SMTP_USE_TLS', True)
+    port = current_app.config.get('SMTP_PORT', 465)
+    use_ssl = current_app.config.get('SMTP_USE_SSL', True)
+    use_tls = current_app.config.get('SMTP_USE_TLS', False)
     username = current_app.config.get('SMTP_USERNAME', '')
     password = current_app.config.get('SMTP_PASSWORD', '')
 
-    if use_tls:
-        context = ssl.create_default_context()
+    context = ssl.create_default_context()
+
+    if use_ssl:
+        server = smtplib.SMTP_SSL(host, port, timeout=10, context=context)
+    elif use_tls:
         server = smtplib.SMTP(host, port, timeout=10)
         server.starttls(context=context)
     else:
