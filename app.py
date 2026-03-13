@@ -112,7 +112,7 @@ if __name__ == '__main__':
     port = Config.SERVER_PORT
 
     print('=' * 70)
-    print('🚀 VoiceLink Server Starting...')
+    print('[*] VoiceLink Server Starting...')
     print(f'   Backend API:     http://127.0.0.1:{port}/api')
     print(f'   Network access:  http://{local_ip}:{port}/api')
     print(f'   Frontend:        http://localhost:3000')
@@ -126,7 +126,7 @@ if __name__ == '__main__':
     ssl_context = None
     if os.path.exists(cert_path) and os.path.exists(key_path):
         ssl_context = (cert_path, key_path)
-        print('🔒 SSL enabled')
+        print('[*] SSL enabled')
 
     socketio.run(
         app,
