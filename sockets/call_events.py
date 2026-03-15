@@ -322,6 +322,15 @@ def register_call_events(socketio):
                 'session_id': session_id,
             }, room=caller_sid)
 
+        # Also notify the callee of the session_id for resilience
+        emit('call_session_created', {
+            'session_id': session_id,
+            'partner_id': caller_id,
+            'partner': _get_user_info(caller_id),
+            'call_type': data.get('call_type', 'voice'),
+            'call_id': data.get('call_id'),
+        })
+
         # Broadcast that both users are now in a call
         emit('user_call_status', {
             'user_id': caller_id,
