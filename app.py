@@ -48,7 +48,7 @@ def create_app():
     app.register_blueprint(push_bp)
 
     # Register SocketIO events
-    register_socket_events(socketio)
+    register_socket_events(socketio, app)
 
     @app.route('/')
     def index():

@@ -126,6 +126,33 @@ def update_call_log(user, call_id):
     return jsonify({'call': call_log.to_dict()})
 
 
+@calls_bp.route('/session', methods=['GET'])
+@jwt_required_with_user
+def get_active_session(user):
+    """Return the user's active call session, if any (for page-refresh recovery)."""
+    from sockets.call_events import user_call_session, call_sessions
+    from models.user import User
+
+    session_id = user_call_session.get(user.id)
+    if not session_id or session_id not in call_sessions:
+        return jsonify({'session': None})
+
+    session = call_sessions[session_id]
+    partner_id = session['callee_id'] if session['caller_id'] == user.id else session['caller_id']
+    partner = db.session.get(User, partner_id)
+
+    return jsonify({
+        'session': {
+            'session_id': session_id,
+            'partner_id': partner_id,
+            'partner': partner.to_dict() if partner else {'id': partner_id},
+            'call_type': session['call_type'],
+            'started_at': session['started_at'],
+            'call_id': session.get('call_id'),
+        }
+    })
+
+
 @calls_bp.route('/active', methods=['GET'])
 @jwt_required_with_user
 def get_active_calls(user):

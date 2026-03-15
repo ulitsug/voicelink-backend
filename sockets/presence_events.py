@@ -32,7 +32,7 @@ def get_online_user_ids():
     return list(user_to_sid.keys())
 
 
-def register_presence_events(socketio):
+def register_presence_events(socketio, app=None):
 
     @socketio.on('connect')
     def handle_connect():
@@ -48,17 +48,9 @@ def register_presence_events(socketio):
             user_last_heartbeat.pop(user_id, None)
             user_activity.pop(user_id, None)
 
-            # Clean up any active calls
-            from sockets.call_events import active_calls
-            partner_id = active_calls.pop(user_id, None)
-            if partner_id:
-                active_calls.pop(partner_id, None)
-                partner_sid = get_user_sid(partner_id)
-                if partner_sid:
-                    emit('call_ended', {
-                        'from_id': user_id,
-                        'reason': 'disconnected',
-                    }, room=partner_sid)
+            # Use graceful disconnect handler — gives 120s to reconnect during calls
+            from sockets.call_events import handle_user_disconnect
+            handle_user_disconnect(user_id, socketio, app)
 
             # Update user status
             user = db.session.get(User, user_id)
@@ -114,6 +106,10 @@ def register_presence_events(socketio):
 
         # Join personal room
         join_room(f'user_{user_id}')
+
+        # Check if user was in a call and reconnected within grace period
+        from sockets.call_events import handle_user_reconnect
+        handle_user_reconnect(user_id, socketio)
 
         # Update status
         user.status = 'online'
